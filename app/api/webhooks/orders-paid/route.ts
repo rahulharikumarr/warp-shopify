@@ -22,6 +22,41 @@ interface ShopifyOrder {
   line_items: ShopifyLineItem[];
 }
 
+async function fulfillShopifyOrder(
+  shop: string,
+  accessToken: string,
+  orderId: number,
+  trackingNumber: string
+): Promise<void> {
+  const trackingUrl = `https://tracking.wearewarp.com/${trackingNumber}`;
+
+  const response = await fetch(
+    `https://${shop}/admin/api/2024-01/orders/${orderId}/fulfillments.json`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken,
+      },
+      body: JSON.stringify({
+        fulfillment: {
+          tracking_number: trackingNumber,
+          tracking_company: 'Warp',
+          tracking_url: trackingUrl,
+          notify_customer: true,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error(`Failed to fulfill Shopify order ${orderId}:`, response.status, text);
+  } else {
+    console.log(`Shopify order ${orderId} marked fulfilled with tracking ${trackingNumber}`);
+  }
+}
+
 async function postSlackMessage(webhookUrl: string, payload: object): Promise<void> {
   try {
     await fetch(webhookUrl, {
@@ -102,6 +137,11 @@ export async function POST(request: NextRequest) {
       warpOrderId = booking.order_id ?? null;
       trackingNumber = booking.tracking_number ?? null;
       status = 'booked';
+
+      // Mark order as fulfilled in Shopify with Warp tracking info
+      if (trackingNumber) {
+        await fulfillShopifyOrder(shop, install.access_token, order.id, trackingNumber);
+      }
     } else {
       status = 'booking_failed';
     }
